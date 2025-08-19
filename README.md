@@ -26,3 +26,7 @@ terraform init
 terraform plan
 terraform apply -auto-approve
 aws eks update-kubeconfig --name $(terraform output -raw cluster_name) --region 
+```
+
+push code to github
+
