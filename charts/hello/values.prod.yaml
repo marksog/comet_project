@@ -1,0 +1,13 @@
+replicaCout: 3
+service:
+  type: ClusterIP
+
+ingress:
+  enabled: true
+  className: "aws-alb"
+  hosts:
+    - host: hello.example.com
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+

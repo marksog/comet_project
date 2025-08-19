@@ -1,0 +1,2 @@
+If service.type=LoadBalancer, get the public URL via:
+  kubectl get svc -n {{ .Release.Namespace }} {{ include "hello.fullname" . }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'

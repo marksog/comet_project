@@ -1,0 +1,32 @@
+image:
+  repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/hello-app # Replace with your ECR repository URL
+  tag: latest # Replace with your desired image tag
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+service:
+  type: LoadBalancer
+  port: 80
+
+container:
+  port: 8080
+
+
+ingress:
+  enabled: false  # enable for prod alb /nginx
+  className: "aws-alb" # use "nginx" for nginx ingress controller
+  hosts: []
+  tls: []
+
+resources: 
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+redis: 
+  enabled: false
+

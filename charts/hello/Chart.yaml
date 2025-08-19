@@ -1,0 +1,12 @@
+apiVersion: v2
+name: hello
+description: A Helm chart for a simple hello world application
+version: 0.1.0
+appVersion: "1.0.0"
+type: application
+
+dependencies:
+  - name: redis
+    version: 19.x.x
+    repository: https://charts.bitnami.com/bitnami
+    condition: redis.enabled
