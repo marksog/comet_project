@@ -2,11 +2,13 @@ name: 'building the infrastructure with terraform'
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
     paths:
-      - 'infra/'
+      - 'infra/**'
   pull_request:
-    branches: [ main ]
+    branches:
+      - main
     paths:
       - 'infra/**'
 
@@ -67,7 +69,3 @@ jobs:
           echo "ECR_REPOSITORY=$(jq -r '.ecr_repository_url.value' tf_output.json)" >> $GITHUB_ENV
           echo "CLUSTER_NAME=$(jq -r '.cluster_name.value' tf_output.json)" >> $GITHUB_ENV
         working-directory: ./infra
-
-
-
-        
