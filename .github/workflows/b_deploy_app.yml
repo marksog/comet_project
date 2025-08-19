@@ -48,7 +48,7 @@ jobs:
       - name: Run tests
         run: |
           cd app
-          python -m pytest app/tests/test_app.py -v
+          python -m pytest tests/test_app.py -v
       - name: Build Docker image for ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
