@@ -1,34 +1,69 @@
-name: Python Package using Conda
+name: 'Building the infrastructure with terraform'
 
-on: [push]
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'infra/'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'infra/**'
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.7.6
 
 jobs:
-  build-linux:
+  terraform:
+    name: 'Terraform'
     runs-on: ubuntu-latest
-    strategy:
-      max-parallel: 5
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python 3.10
-      uses: actions/setup-python@v3
-      with:
-        python-version: '3.10'
-    - name: Add conda to system path
-      run: |
-        # $CONDA is an environment variable pointing to the root of the miniconda directory
-        echo $CONDA/bin >> $GITHUB_PATH
-    - name: Install dependencies
-      run: |
-        conda env update --file environment.yml --name base
-    - name: Lint with flake8
-      run: |
-        conda install flake8
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-    - name: Test with pytest
-      run: |
-        conda install pytest
-        pytest
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Terraform Init
+        id: init
+        run: terraform init
+        working-directory: ./infra
+      
+      - name: Terraform Format
+        id: fmt
+        run: terraform fmt -check
+        working-directory: ./infra
+      
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate
+        working-directory: ./infra
+      
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan -no-color -input=false
+          terraform plan -no-color -input=false -out=tfplan
+        working-directory: ./infra
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: terraform apply -auto-approve -input=false tfplan
+        working-directory: ./infra
+
+      - name: Output Terraform values
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          terraform output -json > tf_output.json
+          echo "ECR_REPOSITORY=$(jq -r '.ecr_repository_url.value' tf_output.json)" >> $GITHUB_ENV
+          echo "CLUSTER_NAME=$(jq -r '.cluster_name.value' tf_output.json)" >> $GITHUB_ENV
+        working-directory: ./infra
