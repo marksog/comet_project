@@ -23,7 +23,7 @@ jobs:
       id-token: write
 
     steps:
-      - name: Checkeout repository
+      - name: Checkout repository
         uses: actions/checkout@v4
       
       - name: Configure AWS credentials
@@ -33,9 +33,9 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
       
-      - name: Terrafrom Init
+      - name: Terraform Init
         id: init
-        runs: terraform init
+        run: terraform init
         working-directory: ./infra
       
       - name: Terraform Format
