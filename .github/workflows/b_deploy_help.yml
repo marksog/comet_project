@@ -44,18 +44,18 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r application/requirements.txt
+          pip install -r app/requirements.txt
 
       - name: Run tests
         run: |
-          cd application
+          cd app
           python -m pytest app/tests/test_app.py -v
 
       - name: Build Docker image for ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest ./application
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest ./app
 
       - name: Test Docker image
         env:
