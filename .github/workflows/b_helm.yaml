@@ -125,3 +125,7 @@ jobs:
           kubectl get svc -n ${{ env.DEPLOY_NAMESPACE }}
           echo "Application deployed successfully!"
           echo "To access: kubectl port-forward svc/hello-world-app 8000:8000 -n ${{ env.DEPLOY_NAMESPACE }}"
+
+
+
+          
