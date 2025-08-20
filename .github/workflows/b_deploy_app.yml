@@ -62,7 +62,7 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
           # Run container in background
-          docker run -d --name test-app -p 8000:8000 $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker run -d --name test-app -p 8080:8080 $ECR_REGISTRY/$ECR_REPOSITORY:latest
           
           # Wait longer for app to start (increase to 10-15 seconds)
           sleep 15
