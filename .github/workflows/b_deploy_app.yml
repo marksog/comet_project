@@ -73,9 +73,9 @@ jobs:
           
           # Try multiple health check approaches
           echo "Testing health endpoint..."
-          if curl -f http://localhost:8000/health; then
+          if curl -f http://localhost:8080/health; then
             echo "Health check passed!"
-          elif curl -f http://localhost:8000/; then
+          elif curl -f http://localhost:8080/; then
             echo "Root endpoint works, health endpoint might not exist"
           else
             echo "All endpoints failed - checking container status..."
