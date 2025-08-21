@@ -2,8 +2,7 @@ name: 'building the infrastructure with terraform'
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
     paths:
       - 'infra/**'
   pull_request:
@@ -58,12 +57,12 @@ jobs:
         working-directory: ./infra
 
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
         run: terraform apply -auto-approve -input=false tfplan
         working-directory: ./infra
 
       - name: Output Terraform values
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
         run: |
           terraform output -json > tf_output.json
           echo "ECR_REPOSITORY=$(jq -r '.ecr_repository_url.value' tf_output.json)" >> $GITHUB_ENV
