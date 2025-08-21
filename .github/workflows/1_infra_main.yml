@@ -1,4 +1,4 @@
-name: 'infrastructure with terraform'
+name: 'Infra with terraform'
 
 on:
   push:
