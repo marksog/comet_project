@@ -30,3 +30,39 @@ aws eks update-kubeconfig --name $(terraform output -raw cluster_name) --region
 
 push code to github
 
+Deploy github actions will deploy infrastructure and application.
+
+# Hello World Kubernetes Deployment
+
+This project demonstrates how to deploy a simple "Hello, World!" application to Kubernetes using Infrastructure-as-Code tools.
+
+## Prerequisites
+
+- AWS account with appropriate permissions
+- Terraform installed locally (optional)
+- kubectl configured (after cluster creation)
+- Helm installed (for local deployment)
+
+## Deployment Steps
+
+### 1. Infrastructure Setup
+
+The Kubernetes cluster will be automatically created when you push changes to the `infrastructure/` directory. 
+
+Alternatively, to deploy manually:
+
+1. Navigate to the `infrastructure/` directory
+2. Run `terraform init` to initialize Terraform
+3. Run `terraform plan` to review changes
+4. Run `terraform apply` to create the cluster
+
+### 2. Application Deployment
+
+The application will be automatically built and deployed when you push changes to the `application/` directory.
+
+To deploy manually:
+
+1. Build and push the Docker image:
+   ```bash
+   cd application
+   docker build -t hello-world .
