@@ -1,15 +1,11 @@
 name: 'Build, Test, and Deploy'
 
 on:
-  push:
-    branches: [ main ]
-    paths:
-      - 'app/**'
-      - 'charts/**'
-  pull_request:
-    branches: [ main ]
-    paths-ignore:
-      - '**/README.md'
+  workflow_run:
+    workflows:
+      - 'infrastructure with terraform' # Name of the a_terraform.yml workflow, this ensures infra is built first
+    types:
+      - completed
 
 env:
   AWS_REGION: us-east-1
