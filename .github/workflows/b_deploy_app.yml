@@ -1,11 +1,12 @@
 name: 'Build, Test, and Deploy'
-
 on:
   workflow_run:
     workflows:
-      - 'infrastructure with terraform' # Name of the a_terraform.yml workflow, this ensures infra is built first
+      - 'infrastructure with terraform' # must match the name: in a_terraform.yml exactly
     types:
       - completed
+    branches:
+      - main
 
 env:
   AWS_REGION: us-east-1
@@ -14,7 +15,9 @@ env:
   DEPLOY_NAMESPACE: default
 
 jobs:
+  # Only run when the triggering workflow completed successfully on main
   build-test-push:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     name: 'Build, Test, and Push to ECR'
     runs-on: ubuntu-latest
 

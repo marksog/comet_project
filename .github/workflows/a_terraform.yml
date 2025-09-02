@@ -5,66 +5,98 @@ on:
     branches: [ main ]
     paths:
       - 'infra/**'
-  
   pull_request:
     branches: [ main ]
-    # paths:
-    #   - 'infra/**'   # just so any pr changes will cause a run
+    paths:
+      - 'infra/**'
 
 env:
   AWS_REGION: us-east-1
   TF_VERSION: 1.7.6
 
+concurrency:
+  group: infra-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
-  terraform:
-    name: 'Terraform'
+  plan:
+    name: 'Terraform Plan (validate & fmt)'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
-      - name: Install Terraform
-        run: |
-          curl -fsSL https://releases.hashicorp.com/terraform/${{ env.TF_VERSION }}/terraform_${{ env.TF_VERSION }}_linux_amd64.zip -o terraform.zip
-          unzip terraform.zip
-          sudo mv terraform /usr/local/bin/
-          terraform --version
-      
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-      
+
       - name: Terraform Init
         id: init
         run: terraform init
         working-directory: ./infra
-      
+
       - name: Terraform Format
         id: fmt
         run: terraform fmt -check
         working-directory: ./infra
-      
+
       - name: Terraform Validate
         id: validate
         run: terraform validate
         working-directory: ./infra
-      
+
       - name: Terraform Plan
         id: plan
-        run: |
-          terraform plan -no-color -input=false -out=tfplan
-        working-directory: ./infra
-      
-      - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
-        run: terraform apply -auto-approve -input=false tfplan
+        run: terraform plan -no-color -input=false -out=tfplan
         working-directory: ./infra
 
-## next workflow file
+      - name: Upload tfplan artifact (optional)
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ github.sha }}
+          path: infra/tfplan
+
+  apply:
+    name: 'Terraform Apply (only on main push)'
+    needs: plan
+    runs-on: ubuntu-latest
+    # Only run on an actual push to main (not on PRs)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS credentials (for apply)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./infra
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve -input=false tfplan
+        working-directory: ./infra
