@@ -61,3 +61,10 @@ variable "admin_users" {
     "arn:aws:iam::923214554566:root"
   ]
 }
+
+variable "testing" {
+  description = "Testing variable"
+  type        = string
+  default     = "test"
+  
+}
