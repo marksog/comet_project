@@ -5,9 +5,9 @@ on:
     branches: [ main ]
     paths:
       - 'infra/**'
+  
   pull_request:
-    branches:
-      - main
+    branches: [ main ]
     paths:
       - 'infra/**'
 
