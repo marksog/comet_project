@@ -8,8 +8,8 @@ on:
   
   pull_request:
     branches: [ main ]
-    paths:
-      - 'infra/**'
+    # paths:
+    #   - 'infra/**'   # just so any pr changes will cause a run
 
 env:
   AWS_REGION: us-east-1
