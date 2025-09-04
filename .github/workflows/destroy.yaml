@@ -1,0 +1,64 @@
+name: 'Cleanup: Helm uninstall and Terraform destroy'
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "DESTROY" to confirm destruction'
+        required: true
+        default: 'NO'
+
+env:
+  AWS_REGION: us-east-1
+  DEPLOY_NAMESPACE: default-app
+  RELEASE_NAME: hello-world-app
+
+jobs:
+  destroy:
+    if: ${{ github.event.inputs.confirm == 'DESTROY' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v4
+
+      - name: 'Configure AWS credentials'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 'Setup Terraform'
+        uses: hashicorp/setup-terraform@v3
+
+      - name: 'Setup Helm'
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: 'Try kubeconfig (ignore if cluster already gone)'
+        continue-on-error: true
+        run: |
+          aws eks update-kubeconfig --region "$AWS_REGION" --name "${{ secrets.CLUSTER_NAME }}"
+
+      - name: 'Helm uninstall (ignore errors)'
+        continue-on-error: true
+        run: |
+          helm uninstall "$RELEASE_NAME" -n "$DEPLOY_NAMESPACE" || true
+          sleep 10
+
+      - name: 'Cleanup Kubernetes resources'
+        continue-on-error: true
+        run: |
+          # Delete any remaining resources
+          kubectl delete all --all -n "$DEPLOY_NAMESPACE" || true
+          # Delete persistent volume claims
+          kubectl delete pvc --all -n "$DEPLOY_NAMESPACE" || true
+          # Delete namespace
+          kubectl delete namespace "$DEPLOY_NAMESPACE" || true
+          sleep 30
+
+      - name: 'Terraform destroy'
+        working-directory: infra
+        run: |
+          terraform init -input=false
+          terraform destroy -auto-approve -var="region=$AWS_REGION"

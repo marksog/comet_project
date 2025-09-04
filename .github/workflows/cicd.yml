@@ -6,18 +6,45 @@ on:
     paths:
       - 'app/**'
       - 'charts/**'
+      - 'infra/**'
       - '.github/workflows/cicd.yml'
   workflow_dispatch:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }} # repo name only do not forget.
   CLUSTER_NAME: ${{ secrets.CLUSTER_NAME }}
   DEPLOY_NAMESPACE: default-app
 
 jobs:
+  infra-apply:
+    name: 'Provision infra (Terraform apply)'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v4
+
+      - name: 'Configure AWS credentials'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 'Setup Terraform'
+        uses: hashicorp/setup-terraform@v3
+
+      - name: 'Terraform init/validate/plan/apply'
+        working-directory: infra
+        run: |
+          terraform init -input=false
+          terraform validate
+          terraform plan -out=tfplan
+          terraform apply -auto-approve tfplan
+
   build-test-push:
     name: 'Build, Test, and Push to ECR'
+    needs: infra-apply
     runs-on: ubuntu-latest
     steps:
       - name: 'Checkout code'
@@ -43,9 +70,8 @@ jobs:
         run: pip install -r app/requirements.txt
 
       - name: 'Run tests'
-        run: |
-          cd app
-          python -m pytest -q
+        working-directory: app
+        run: python -m pytest -q
 
       - name: 'Build image'
         env:
@@ -118,15 +144,13 @@ jobs:
         run: |
           helm lint "$CHART_PATH" \
             --set image.repository="$IMAGE_REPO" \
-            --set image.tag="$IMAGE_TAG" \
-            --set container.port=8080
+            --set image.tag="$IMAGE_TAG"
 
       - name: 'Deploy with Helm'
         run: |
           helm upgrade --install "$RELEASE_NAME" "$CHART_PATH" \
             --set image.repository="$IMAGE_REPO" \
             --set image.tag="$IMAGE_TAG" \
-            --set container.port=8080 \
             --set redis.master.persistence.enabled=false \
             --set redis.replica.persistence.enabled=false \
             --namespace "$DEPLOY_NAMESPACE" \
@@ -140,6 +164,7 @@ jobs:
         if: failure()
         run: |
           echo "Collecting diagnostics..."
+          kubectl get svc -n "$DEPLOY_NAMESPACE"
           kubectl get pods -n "$DEPLOY_NAMESPACE" -o wide || true
           kubectl get events -n "$DEPLOY_NAMESPACE" --sort-by=.lastTimestamp | tail -n 200 || true
           for p in $(kubectl get pods -n "$DEPLOY_NAMESPACE" -o name); do
@@ -153,3 +178,26 @@ jobs:
           kubectl rollout status "deploy/$RELEASE_NAME" -n "$DEPLOY_NAMESPACE" --timeout=9m
           kubectl get svc -n "$DEPLOY_NAMESPACE"
           kubectl get pods -n "$DEPLOY_NAMESPACE" -o wide
+
+      - name: 'Expose endpoint and smoke test'
+        if: success()
+        run: |
+          set -e
+          SVC=$RELEASE_NAME
+          echo "Waiting for LoadBalancer hostname..."
+          for i in {1..60}; do
+            HOST=$(kubectl get svc "$SVC" -n "$DEPLOY_NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            if [[ -n "$HOST" ]]; then break; fi
+            sleep 5
+          done
+          if [[ -z "$HOST" ]]; then echo "No LB hostname found"; exit 1; fi
+          echo "Endpoint: http://$HOST"
+          for i in {1..24}; do
+            if curl -fsS "http://$HOST/health" >/dev/null 2>&1; then
+              echo "Smoke test OK"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Smoke test failed to reach http://$HOST/health"
+          exit 1

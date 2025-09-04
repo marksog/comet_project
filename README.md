@@ -1,80 +1,60 @@
 # Comet Project
 
-This project demonstrates how to deploy a simple "Hello, World!" application to Kubernetes using Infrastructure-as-Code tools like Terraform, Helm, and GitHub Actions.
+Pipeline overview
+- Builds and pushes Docker image to ECR.
+- Provisions infra (VPC, EKS, ECR, addons) via Terraform.
+- Installs the app Helm chart.
+- Exposes a public endpoint with a Service of type LoadBalancer.
+- Runs a smoke test to /health.
 
----
+DNS/exposure and ports
+- Exposure: Kubernetes Service type LoadBalancer (classic/NLB). You will see an AWS DNS hostname (EXTERNAL-IP) on the Service.
+- Ports:
+  - containerPort: 8080 (the app listens here)
+  - Service: port 80 -> targetPort 8080 (HTTP)
+- Ingress: Not used by default. If you prefer ALB Ingress, install AWS Load Balancer Controller and switch the chart to Ingress.
 
-## Table of Contents
-1. [Prerequisites](#prerequisites)
-2. [Local Testing](#local-testing)
-3. [Infrastructure Deployment](#infrastructure-deployment)
-4. [Application Deployment](#application-deployment)
-5. [Automated Deployment with GitHub Actions](#automated-deployment-with-github-actions)
+Required GitHub secrets
+- AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY: IAM user/role with permissions for ECR, EKS, EC2, IAM, etc.
+- ECR_REPOSITORY: The ECR repo name (must match infra variable `ecr_repo_name`).
+- CLUSTER_NAME: The EKS cluster name (must match infra variable `cluster_name`).
 
----
+Setup GitHub Secrets
+- Go to your repo → Settings → Secrets and variables → Actions → New repository secret.
 
-## Prerequisites
+How to run end-to-end (CI)
+- Push to main or run the “Build, Test, and Deploy” workflow via Actions.
+- The workflow will apply Terraform, build/push image, deploy, and print the endpoint, then smoke test /health.
 
-Before you begin, ensure you have the following tools and permissions:
+How to rerun fialed jobs
+- Go to GitHub Actions → select the run → Rerun jobs → “Rerun failed jobs”.
 
-- **AWS Account**: With appropriate permissions to create EKS clusters, IAM roles, and other resources.
-- **Terraform**: Installed locally (optional for manual deployment).
-- **kubectl**: Installed and configured (after the cluster is created).
-- **Helm**: Installed for managing Kubernetes resources.
-- **Docker**: Installed for building and running container images.
-
----
-
-## Local Testing
-
-You can test the application locally before deploying it to Kubernetes.
-
-### 1. Run Locally with Uvicorn
+How to tear down the setup
+- from your local machine. 
 ```bash
-export PORT=8080
-uvicorn main:app --reload --host 0.0.0.0 --port $PORT
-```
-## Infrastructure deployment
+brew install gh
+gh auth login
 
-This can easily be done with github actions. 
-or Can be runned from local machine with right credentials 
+# By workflow name
+gh workflow run "Cleanup: Helm uninstall and Terraform destroy" -f confirm=DESTROY
 
-### manually
-```bash
-cd infra
-terraform init
-terraform plan
-terraform apply -auto-approve
-```
-after deployment 
-```bash
-aws eks update-kubeconfig --name $(terraform output -raw cluster_name) --region <your region>
+# Or by file on a branch
+gh workflow run destroy.yml --ref main -f confirm=DESTROY
 ```
 
-deploying the application
-```bash 
-cd application
-docker build -t <your-ecr-repo>:latest .
-docker push <your-ecr-repo>:latest
-```
-deploy using helm
-```bash
-helm upgrade --install hello-world-app ./helm-chart \
-  --set image.repository="<your-ecr-repo>" \
-  --set image.tag="latest" \
-  --namespace default \
-  --create-namespace \
-  --wait
-  ```
-  verify
-```bash
-kubectl get pods -n default
-kubectl get svc -n default
-# access application
-# Use the external IP or DNS of the service:
-kubectl get svc -n default
-```
+How to run locally (Mac)
+- Provision infra: `make apply`
+- Update kubeconfig: `aws eks update-kubeconfig --region us-east-1 --name <cluster_name>`
+- Deploy via CI or manually with Helm (values already default to LoadBalancer).
+- Smoke test: `make smoke`
 
+Rerun failed jobs
+- Go to GitHub Actions → select the run → Rerun jobs → “Rerun failed jobs”.
 
-## Automated Deployment with GitHub Actions
-Using help github actions will deploy the application to aws eks
+Teardown
+- Preferred: Run the “Cleanup: Helm uninstall and Terraform destroy” workflow and type DESTROY.
+- Locally: `make destroy`
+  - If IGW detaches fail due to ELB, ensure no Services of type LoadBalancer remain: `kubectl get svc -A | grep LoadBalancer` and delete them, then destroy again.
+
+Notes
+- Redis persistence is disabled by default to avoid PVC binding issues on clusters without a default StorageClass. If you enable it later, ensure the EBS CSI add-on and a default gp3 StorageClass exist.
