@@ -1,5 +1,5 @@
 image:
-  repository: <your-ecr-repo-url> # e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com/hello-world-app
+  repository: 923214554566.dkr.ecr.us-east-1.amazonaws.com/hello-world-app # e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com/hello-world-app
   tag: latest
   pullPolicy: IfNotPresent
 
