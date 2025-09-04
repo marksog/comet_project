@@ -1,0 +1,15 @@
+Thanks for installing {{ .Chart.Name }} in namespace {{ .Release.Namespace }}.
+
+{{- if .Values.ingress.enabled }}
+1) Ingress (ALB):
+   kubectl get ingress {{ include "hello.fullname" . }} -n {{ .Release.Namespace }}
+   export HOST=$(kubectl get ingress {{ include "hello.fullname" . }} -n {{ .Release.Namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{.status.loadBalancer.ingress[0].ip}')
+   echo "Open: http://$HOST/"
+{{- else }}
+1) Service (LoadBalancer):
+   kubectl get svc {{ include "hello.fullname" . }} -n {{ .Release.Namespace }}
+   export HOST=$(kubectl get svc {{ include "hello.fullname" . }} -n {{ .Release.Namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{.status.loadBalancer.ingress[0].ip}')
+   echo "Open: http://$HOST:{{ .Values.service.port }}/"
+{{- end }}
+
+It can take a few minutes for the LoadBalancer address to appear.
