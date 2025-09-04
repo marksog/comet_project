@@ -104,6 +104,23 @@ jobs:
           echo "IMAGE_REPO=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}" >> $GITHUB_ENV
           echo "IMAGE_TAG=latest" >> $GITHUB_ENV
 
+      - name: Preflight: verify image exists in ECR
+        run: |
+          aws ecr describe-images \
+            --repository-name "${ECR_REPOSITORY}" \
+            --image-ids imageTag="${IMAGE_TAG}" >/dev/null
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
+          kubectl version --client --output=yaml
+          kubectl cluster-info
+
+      - name: Ensure namespace exists
+        run: |
+          kubectl get ns "${{ env.DEPLOY_NAMESPACE }}" >/dev/null 2>&1 || \
+            kubectl create ns "${{ env.DEPLOY_NAMESPACE }}"
+
       - name: Helm dependency update
         run: helm dependency update ./charts/hello
 
@@ -114,39 +131,38 @@ jobs:
             --set image.tag="$IMAGE_TAG" \
             --set container.port=8080
 
-      - name: Dry-run render (debug)
+      - name: Deploy with Helm (with diagnostics on failure)
+        env:
+          RELEASE_NAME: hello-world-app
         run: |
-          helm template hello ./charts/hello \
-            --set image.repository="$IMAGE_REPO" \
-            --set image.tag="$IMAGE_TAG" \
-            --set container.port=8080 | head -n 80
-
-      - name: Configure kubectl
-        run: |
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
-          kubectl version --client --output=yaml
-          kubectl cluster-info
-          kubectl get nodes -o wide
-
-      - name: Verify image metadata
-        run: |
-          if [ -z "${IMAGE_REPO}" ]; then
-            echo "IMAGE_REPO is empty. Upstream job may have failed to export outputs."
+          set -euo pipefail
+          echo "Deploying $RELEASE_NAME to namespace ${{ env.DEPLOY_NAMESPACE }} with image $IMAGE_REPO:$IMAGE_TAG"
+          if ! helm upgrade --install "$RELEASE_NAME" ./charts/hello \
+              --set image.repository="$IMAGE_REPO" \
+              --set image.tag="$IMAGE_TAG" \
+              --set container.port=8080 \
+              --namespace "${{ env.DEPLOY_NAMESPACE }}" \
+              --create-namespace \
+              --wait \
+              --timeout 10m \
+              --atomic \
+              --debug
+          then
+            echo "Helm deploy failed. Collecting diagnostics..."
+            kubectl get pods -n "${{ env.DEPLOY_NAMESPACE }}" -o wide || true
+            echo "Recent namespace events:"
+            kubectl get events -n "${{ env.DEPLOY_NAMESPACE }}" --sort-by=.lastTimestamp | tail -n 200 || true
+            echo "Describe pods:"
+            for p in $(kubectl get pods -n "${{ env.DEPLOY_NAMESPACE }}" -o name); do
+              kubectl describe "$p" -n "${{ env.DEPLOY_NAMESPACE }}" || true
+            done
+            echo "Deployment YAML (if exists):"
+            kubectl get deploy "$RELEASE_NAME" -n "${{ env.DEPLOY_NAMESPACE }}" -o yaml || true
             exit 1
           fi
-          echo "Using image: ${IMAGE_REPO}:${IMAGE_TAG}"
 
-      - name: Deploy with Helm
+      - name: Verify rollout
         run: |
-          helm upgrade --install hello-world-app ./charts/hello \
-            --set image.repository="$IMAGE_REPO" \
-            --set image.tag="$IMAGE_TAG" \
-            --namespace ${{ env.DEPLOY_NAMESPACE }} \
-            --create-namespace \
-            --wait
-
-      - name: Verify deployment
-        run: |
-          kubectl get pods -n ${{ env.DEPLOY_NAMESPACE }}
-          kubectl get svc -n ${{ env.DEPLOY_NAMESPACE }}
-          echo "To access (port-forward): kubectl port-forward svc/hello-world-app 8080:8080 -n ${{ env.DEPLOY_NAMESPACE }}"
+          kubectl rollout status deploy/hello-world-app -n "${{ env.DEPLOY_NAMESPACE }}" --timeout=9m
+          kubectl get svc -n "${{ env.DEPLOY_NAMESPACE }}"
+          kubectl get pods -n "${{ env.DEPLOY_NAMESPACE }}" -o wide
