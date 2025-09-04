@@ -5,6 +5,7 @@ on:
     branches: [ main ]
     paths:
       - 'app/**'
+      - 'infra/**'
       - 'charts/**'
       - '.github/workflows/cicd.yaml'
   workflow_dispatch:
