@@ -13,15 +13,12 @@ env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }} # repo name only (e.g., hello-world-app)
   CLUSTER_NAME: ${{ secrets.CLUSTER_NAME }}
-  DEPLOY_NAMESPACE: default
+  DEPLOY_NAMESPACE: default-app
 
 jobs:
   build-test-push:
     name: 'Build, Test, and Push to ECR'
     runs-on: ubuntu-latest
-    outputs:
-      image_repo: ${{ steps.meta.outputs.image_repo }}
-      image_tag: ${{ steps.meta.outputs.image_tag }}
 
     steps:
       - name: Checkout code
@@ -75,21 +72,10 @@ jobs:
         run: |
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-      - name: Export image metadata
-        id: meta
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        run: |
-          echo "image_repo=$ECR_REGISTRY/$ECR_REPOSITORY" >> $GITHUB_OUTPUT
-          echo "image_tag=latest" >> $GITHUB_OUTPUT
-
   deploy:
     name: 'Deploy to EKS'
     needs: build-test-push
     runs-on: ubuntu-latest
-    env:
-      IMAGE_REPO: ${{ needs.build-test-push.outputs.image_repo }}
-      IMAGE_TAG: ${{ needs.build-test-push.outputs.image_tag }}
 
     steps:
       - name: Checkout code
@@ -108,6 +94,15 @@ jobs:
           chmod 700 get_helm.sh
           ./get_helm.sh
           helm version
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image metadata
+        run: |
+          echo "IMAGE_REPO=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}" >> $GITHUB_ENV
+          echo "IMAGE_TAG=latest" >> $GITHUB_ENV
 
       - name: Helm dependency update
         run: helm dependency update ./charts/hello
