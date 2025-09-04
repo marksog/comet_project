@@ -5,14 +5,13 @@ on:
     branches: [ main ]
     paths:
       - 'app/**'
-      - 'infra/**'
       - 'charts/**'
-      - '.github/workflows/cicd.yaml'
+      - '.github/workflows/cicd.yml'
   workflow_dispatch:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }} # repo name only, e.g. hello-world-app
   CLUSTER_NAME: ${{ secrets.CLUSTER_NAME }}
   DEPLOY_NAMESPACE: default
 
@@ -20,6 +19,9 @@ jobs:
   build-test-push:
     name: 'Build, Test, and Push to ECR'
     runs-on: ubuntu-latest
+    outputs:
+      image_repo: ${{ steps.meta.outputs.image_repo }}
+      image_tag: ${{ steps.meta.outputs.image_tag }}
 
     steps:
       - name: Checkout code
@@ -48,7 +50,7 @@ jobs:
       - name: Run tests
         run: |
           cd app
-          python -m pytest tests/test_app.py -v
+          python -m pytest -q
 
       - name: Build Docker image for ECR
         env:
@@ -62,7 +64,8 @@ jobs:
         run: |
           docker run -d --name test-app -p 8080:8080 $ECR_REGISTRY/$ECR_REPOSITORY:latest
           sleep 15
-          curl -f http://localhost:8080/health || exit 1
+          curl -f http://localhost:8080/health
+          docker logs --tail=100 test-app || true
           docker stop test-app
           docker rm test-app
 
@@ -72,17 +75,21 @@ jobs:
         run: |
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-      - name: Output image URI
+      - name: Export image metadata
+        id: meta
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
-          echo "IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:latest" >> $GITHUB_ENV
-          echo "Pushed image: $ECR_REGISTRY/$ECR_REPOSITORY:latest"
+          echo "image_repo=$ECR_REGISTRY/$ECR_REPOSITORY" >> $GITHUB_OUTPUT
+          echo "image_tag=latest" >> $GITHUB_OUTPUT
 
   deploy:
     name: 'Deploy to EKS'
     needs: build-test-push
     runs-on: ubuntu-latest
+    env:
+      IMAGE_REPO: ${{ needs.build-test-push.outputs.image_repo }}
+      IMAGE_TAG: ${{ needs.build-test-push.outputs.image_tag }}
 
     steps:
       - name: Checkout code
@@ -100,20 +107,35 @@ jobs:
           curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
           chmod 700 get_helm.sh
           ./get_helm.sh
+          helm version
+
+      - name: Helm dependency update
+        run: helm dependency update ./charts/hello
+
+      - name: Helm lint
+        run: |
+          helm lint ./charts/hello \
+            --set image.repository="$IMAGE_REPO" \
+            --set image.tag="$IMAGE_TAG" \
+            --set container.port=8080
+
+      - name: Dry-run render (debug)
+        run: |
+          helm template hello ./charts/hello \
+            --set image.repository="$IMAGE_REPO" \
+            --set image.tag="$IMAGE_TAG" \
+            --set container.port=8080 | head -n 80
 
       - name: Configure kubectl
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
-
-      - name: Update Helm dependencies
-        run: |
-          helm dependency update ./charts/hello
+          kubectl version --short
 
       - name: Deploy with Helm
         run: |
           helm upgrade --install hello-world-app ./charts/hello \
-            --set image.repository="${{ secrets.ECR_REPOSITORY }}" \
-            --set image.tag="latest" \
+            --set image.repository="$IMAGE_REPO" \
+            --set image.tag="$IMAGE_TAG" \
             --namespace ${{ env.DEPLOY_NAMESPACE }} \
             --create-namespace \
             --wait
@@ -122,5 +144,4 @@ jobs:
         run: |
           kubectl get pods -n ${{ env.DEPLOY_NAMESPACE }}
           kubectl get svc -n ${{ env.DEPLOY_NAMESPACE }}
-          echo "Application deployed successfully!"
-          echo "To access: kubectl port-forward svc/hello-world-app 8080:8080 -n ${{ env.DEPLOY_NAMESPACE }}"
+          echo "To access (port-forward): kubectl port-forward svc/hello-world-app 8080:8080 -n ${{ env.DEPLOY_NAMESPACE }}"
