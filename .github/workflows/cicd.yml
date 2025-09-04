@@ -11,7 +11,7 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }} # repo name only, e.g. hello-world-app
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }} # repo name only (e.g., hello-world-app)
   CLUSTER_NAME: ${{ secrets.CLUSTER_NAME }}
   DEPLOY_NAMESPACE: default
 
@@ -129,7 +129,17 @@ jobs:
       - name: Configure kubectl
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
-          kubectl version --short
+          kubectl version --client --output=yaml
+          kubectl cluster-info
+          kubectl get nodes -o wide
+
+      - name: Verify image metadata
+        run: |
+          if [ -z "${IMAGE_REPO}" ]; then
+            echo "IMAGE_REPO is empty. Upstream job may have failed to export outputs."
+            exit 1
+          fi
+          echo "Using image: ${IMAGE_REPO}:${IMAGE_TAG}"
 
       - name: Deploy with Helm
         run: |
