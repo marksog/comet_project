@@ -21,41 +21,41 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: 'Checkout code'
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: 'Configure AWS credentials'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
+      - name: 'Login to Amazon ECR'
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Set up Python
+      - name: 'Set up Python'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Install dependencies
+      - name: 'Install dependencies'
         run: |
           pip install -r app/requirements.txt
 
-      - name: Run tests
+      - name: 'Run tests'
         run: |
           cd app
           python -m pytest -q
 
-      - name: Build Docker image for ECR
+      - name: 'Build Docker image for ECR'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest ./app
 
-      - name: Test Docker image
+      - name: 'Test Docker image'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
@@ -66,7 +66,7 @@ jobs:
           docker stop test-app
           docker rm test-app
 
-      - name: Push image to Amazon ECR
+      - name: 'Push image to Amazon ECR'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
@@ -81,89 +81,89 @@ jobs:
       CHART_PATH: ./charts/hello
 
     steps:
-      - name: Checkout code
+      - name: 'Checkout code'
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: 'Configure AWS credentials'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Install Helm
+      - name: 'Install Helm'
         run: |
           curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
           chmod 700 get_helm.sh
           ./get_helm.sh
           helm version
 
-      - name: Login to Amazon ECR
+      - name: 'Login to Amazon ECR'
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Set image metadata
+      - name: 'Set image metadata'
         run: |
           echo "IMAGE_REPO=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}" >> $GITHUB_ENV
           echo "IMAGE_TAG=latest" >> $GITHUB_ENV
 
-      - name: Preflight: verify image exists in ECR
+      - name: 'Preflight: verify image exists in ECR'
         run: |
           aws ecr describe-images \
-            --repository-name "${{ env.ECR_REPOSITORY }}" \
-            --image-ids imageTag="${{ env.IMAGE_TAG }}" >/dev/null
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="$IMAGE_TAG" >/dev/null
 
-      - name: Configure kubectl
+      - name: 'Configure kubectl'
         run: |
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
+          aws eks update-kubeconfig --region "$AWS_REGION" --name "$CLUSTER_NAME"
           kubectl version --client --output=yaml
           kubectl cluster-info
 
-      - name: Ensure namespace exists
+      - name: 'Ensure namespace exists'
         run: |
-          kubectl get ns "${{ env.DEPLOY_NAMESPACE }}" >/dev/null 2>&1 || \
-            kubectl create ns "${{ env.DEPLOY_NAMESPACE }}"
+          kubectl get ns "$DEPLOY_NAMESPACE" >/dev/null 2>&1 || \
+            kubectl create ns "$DEPLOY_NAMESPACE"
 
-      - name: Helm dependency update
-        run: helm dependency update "${CHART_PATH}"
+      - name: 'Helm dependency update'
+        run: helm dependency update "$CHART_PATH"
 
-      - name: Helm lint
+      - name: 'Helm lint'
         run: |
-          helm lint "${CHART_PATH}" \
+          helm lint "$CHART_PATH" \
             --set image.repository="$IMAGE_REPO" \
             --set image.tag="$IMAGE_TAG" \
             --set container.port=8080
 
-      - name: Deploy with Helm
+      - name: 'Deploy with Helm'
         run: |
-          helm upgrade --install "${RELEASE_NAME}" "${CHART_PATH}" \
+          helm upgrade --install "$RELEASE_NAME" "$CHART_PATH" \
             --set image.repository="$IMAGE_REPO" \
             --set image.tag="$IMAGE_TAG" \
             --set container.port=8080 \
-            --namespace "${{ env.DEPLOY_NAMESPACE }}" \
+            --namespace "$DEPLOY_NAMESPACE" \
             --create-namespace \
             --wait \
             --timeout 10m \
             --atomic \
             --debug
 
-      - name: Diagnostics on failure
+      - name: 'Diagnostics on failure'
         if: failure()
         run: |
           echo "Collecting diagnostics..."
-          kubectl get pods -n "${{ env.DEPLOY_NAMESPACE }}" -o wide || true
+          kubectl get pods -n "$DEPLOY_NAMESPACE" -o wide || true
           echo "Recent namespace events:"
-          kubectl get events -n "${{ env.DEPLOY_NAMESPACE }}" --sort-by=.lastTimestamp | tail -n 200 || true
+          kubectl get events -n "$DEPLOY_NAMESPACE" --sort-by=.lastTimestamp | tail -n 200 || true
           echo "Describe all pods:"
-          for p in $(kubectl get pods -n "${{ env.DEPLOY_NAMESPACE }}" -o name); do
-            kubectl describe "$p" -n "${{ env.DEPLOY_NAMESPACE }}" || true
+          for p in $(kubectl get pods -n "$DEPLOY_NAMESPACE" -o name); do
+            kubectl describe "$p" -n "$DEPLOY_NAMESPACE" || true
           done
           echo "Deployment YAML (if exists):"
-          kubectl get deploy "${RELEASE_NAME}" -n "${{ env.DEPLOY_NAMESPACE }}" -o yaml || true
+          kubectl get deploy "$RELEASE_NAME" -n "$DEPLOY_NAMESPACE" -o yaml || true
 
-      - name: Verify rollout
+      - name: 'Verify rollout'
         if: success()
         run: |
-          kubectl rollout status deploy/${RELEASE_NAME} -n "${{ env.DEPLOY_NAMESPACE }}" --timeout=9m
-          kubectl get svc -n "${{ env.DEPLOY_NAMESPACE }}"
-          kubectl get pods -n "${{ env.DEPLOY_NAMESPACE }}" -o wide
+          kubectl rollout status "deploy/$RELEASE_NAME" -n "$DEPLOY_NAMESPACE" --timeout=9m
+          kubectl get svc -n "$DEPLOY_NAMESPACE"
+          kubectl get pods -n "$DEPLOY_NAMESPACE" -o wide
