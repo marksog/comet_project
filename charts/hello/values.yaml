@@ -1,6 +1,6 @@
 image:
-  repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/hello-app # Replace with your ECR repository URL
-  tag: latest # Replace with your desired image tag
+  repository: <your-ecr-repo-url> # e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com/hello-world-app
+  tag: latest
   pullPolicy: IfNotPresent
 
 replicaCount: 2
@@ -12,14 +12,17 @@ service:
 container:
   port: 8080
 
-
 ingress:
-  enabled: false  # enable for prod alb /nginx
-  className: "aws-alb" # use "nginx" for nginx ingress controller
-  hosts: []
+  enabled: true
+  className: "alb"
+  hosts:
+    - host: myapp.example.com   # Use your domain or leave blank for wildcard
+      paths:
+        - path: /
+          pathType: Prefix
   tls: []
 
-resources: 
+resources:
   limits:
     cpu: 200m
     memory: 256Mi
@@ -27,6 +30,4 @@ resources:
     cpu: 100m
     memory: 128Mi
 
-redis: 
-  enabled: false
 
