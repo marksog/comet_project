@@ -30,4 +30,12 @@ resources:
     cpu: 100m
     memory: 128Mi
 
+redis:
+  enabled: true
+  master:
+    persistence:
+      enabled: false
+  replica:
+    persistence:
+      enabled: false
 

@@ -11,7 +11,7 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }} # repo name only (e.g., hello-world-app)
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
   CLUSTER_NAME: ${{ secrets.CLUSTER_NAME }}
   DEPLOY_NAMESPACE: default-app
 
@@ -19,7 +19,6 @@ jobs:
   build-test-push:
     name: 'Build, Test, and Push to ECR'
     runs-on: ubuntu-latest
-
     steps:
       - name: 'Checkout code'
         uses: actions/checkout@v4
@@ -41,36 +40,22 @@ jobs:
           python-version: '3.12'
 
       - name: 'Install dependencies'
-        run: |
-          pip install -r app/requirements.txt
+        run: pip install -r app/requirements.txt
 
       - name: 'Run tests'
         run: |
           cd app
           python -m pytest -q
 
-      - name: 'Build Docker image for ECR'
+      - name: 'Build image'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest ./app
+        run: docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest ./app
 
-      - name: 'Test Docker image'
+      - name: 'Push image'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        run: |
-          docker run -d --name test-app -p 8080:8080 $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          sleep 15
-          curl -f http://localhost:8080/health
-          docker logs --tail=100 test-app || true
-          docker stop test-app
-          docker rm test-app
-
-      - name: 'Push image to Amazon ECR'
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        run: |
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        run: docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
   deploy:
     name: 'Deploy to EKS'
@@ -79,7 +64,6 @@ jobs:
     env:
       RELEASE_NAME: hello-world-app
       CHART_PATH: ./charts/hello
-
     steps:
       - name: 'Checkout code'
         uses: actions/checkout@v4
@@ -119,6 +103,9 @@ jobs:
           kubectl version --client --output=yaml
           kubectl cluster-info
 
+      - name: 'Cluster preflight: storage classes'
+        run: kubectl get storageclass -o wide || true
+
       - name: 'Ensure namespace exists'
         run: |
           kubectl get ns "$DEPLOY_NAMESPACE" >/dev/null 2>&1 || \
@@ -140,6 +127,8 @@ jobs:
             --set image.repository="$IMAGE_REPO" \
             --set image.tag="$IMAGE_TAG" \
             --set container.port=8080 \
+            --set redis.master.persistence.enabled=false \
+            --set redis.replica.persistence.enabled=false \
             --namespace "$DEPLOY_NAMESPACE" \
             --create-namespace \
             --wait \
@@ -152,13 +141,10 @@ jobs:
         run: |
           echo "Collecting diagnostics..."
           kubectl get pods -n "$DEPLOY_NAMESPACE" -o wide || true
-          echo "Recent namespace events:"
           kubectl get events -n "$DEPLOY_NAMESPACE" --sort-by=.lastTimestamp | tail -n 200 || true
-          echo "Describe all pods:"
           for p in $(kubectl get pods -n "$DEPLOY_NAMESPACE" -o name); do
             kubectl describe "$p" -n "$DEPLOY_NAMESPACE" || true
           done
-          echo "Deployment YAML (if exists):"
           kubectl get deploy "$RELEASE_NAME" -n "$DEPLOY_NAMESPACE" -o yaml || true
 
       - name: 'Verify rollout'

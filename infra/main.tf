@@ -39,6 +39,16 @@ module "vpc" {
 }
 
 # ----- EKS -----
+provider "kubernetes" {
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", var.region]
+  }
+}
 
 module "eks" {
     source = "terraform-aws-modules/eks/aws"
@@ -89,9 +99,28 @@ module "eks" {
         vpc-cni = {
             most_recent = true
         }
+        aws-ebs-csi-driver = {
+            most_recent = true
+            service_account_role_arn = module.ebs_csi_irsa.iam_role_arn
+        }
     }
   tags = local.tags
 }  
+
+module "ebs_csi_irsa" {
+  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  version = "~> 5.44"
+
+  role_name             = "${var.cluster_name}-ebs-csi-controller"
+  attach_ebs_csi_policy = true
+
+  oidc_providers = {
+    this = {
+      provider_arn               = module.eks.oidc_provider_arn
+      namespace_service_accounts = ["kube-system:ebs-csi-controller-sa"]
+    }
+  }
+}
 
 # ----- ECR -----
 
